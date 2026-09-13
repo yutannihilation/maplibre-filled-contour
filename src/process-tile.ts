@@ -9,6 +9,8 @@ export interface ProcessTileInput {
     tileHeight: number;
     padding: number;
     thresholds: number[];
+    includeLower: boolean;
+    includeUpper: boolean;
     layer: string;
     extent: number;
     buffer: number;
@@ -22,7 +24,13 @@ export function processTile(input: ProcessTileInput): Uint8Array {
         input.tileWidth,
         input.tileHeight,
         input.padding,
-        {thresholds: input.thresholds, extent: input.extent, buffer: input.buffer}
+        {
+            thresholds: input.thresholds,
+            includeLower: input.includeLower,
+            includeUpper: input.includeUpper,
+            extent: input.extent,
+            buffer: input.buffer
+        }
     );
     return encodeIsobandTile(input.layer, input.extent, bands);
 }

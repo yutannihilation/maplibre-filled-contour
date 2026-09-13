@@ -37,6 +37,46 @@ describe('generateIsobands', () => {
         expect(bands).toHaveLength(1);
         expect(bands[0]?.properties).toEqual({band: 2, min: 300});
     });
+
+    it('can include the lower band and exclude the upper band', () => {
+        const bands = generateIsobands(
+            gradient(7, 7), 7, 7, 4, 4, 1,
+            {thresholds: [200, 300, 400], includeLower: true, includeUpper: false, extent: 4096, buffer: 0}
+        );
+
+        expect(bands.map((band) => band.properties)).toEqual([
+            {band: 0, max: 200},
+            {band: 1, min: 200, max: 300},
+            {band: 2, min: 300, max: 400}
+        ]);
+        expect(bands.every((band) => band.geometry.length > 0)).toBe(true);
+    });
+
+    it('emits only the lower band when all values are below the first threshold', () => {
+        const bands = generateIsobands(new Float32Array(25).fill(50), 5, 5, 2, 2, 1, {
+            thresholds: [100],
+            includeLower: true,
+            includeUpper: false
+        });
+
+        expect(bands).toHaveLength(1);
+        expect(bands[0]?.properties).toEqual({band: 0, max: 100});
+    });
+
+    it('excludes invalid samples from the lower band', () => {
+        const values = new Float32Array(49).fill(50);
+        values[3 * 7 + 3] = Number.NaN;
+        const bands = generateIsobands(values, 7, 7, 4, 4, 1, {
+            thresholds: [100],
+            includeLower: true,
+            includeUpper: false,
+            buffer: 0
+        });
+
+        expect(bands).toHaveLength(1);
+        expect(bands[0]?.properties).toEqual({band: 0, max: 100});
+        expect(bands[0]?.geometry.some((polygon) => polygon.length > 1)).toBe(true);
+    });
 });
 
 describe('DEM decoding', () => {
@@ -76,6 +116,9 @@ describe('DemSource', () => {
             decodeImage
         }).setupMaplibre(maplibre as never);
 
+        expect(source.includeLower).toBe(false);
+        expect(source.includeUpper).toBe(true);
+
         expect(source.getSourceSpecification()).toEqual({
             type: 'vector',
             tiles: ['terrain-isobands://{z}/{x}/{y}.mlt'],
@@ -101,6 +144,33 @@ describe('DemSource', () => {
 
         source.destroy();
         expect(maplibre.removeProtocol).toHaveBeenCalledTimes(2);
+    });
+
+    it('passes includeLower and includeUpper through tile generation and MLT encoding', async () => {
+        const source = new DemSource({
+            id: 'bounded-terrain',
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100],
+            includeLower: true,
+            includeUpper: false,
+            worker: false,
+            getTile,
+            decodeImage: async () => ({
+                width: 4,
+                height: 4,
+                data: new Float32Array(16).fill(50)
+            })
+        });
+
+        expect(source.includeLower).toBe(true);
+        expect(source.includeUpper).toBe(false);
+        const table = decodeTile(await source.getFilledContourTile(0, 0, 0))
+            .find((candidate) => candidate.name === 'isobands');
+        const features = table?.getFeatures() ?? [];
+        expect(features.length).toBeGreaterThan(0);
+        expect(features.every((feature) => feature.properties.band === 0)).toBe(true);
+        expect(features.every((feature) => feature.properties.min === undefined)).toBe(true);
+        expect(features.every((feature) => feature.properties.max === 100)).toBe(true);
     });
 
     it('validates thresholds and times out fetches', async () => {

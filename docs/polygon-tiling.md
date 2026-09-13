@@ -36,20 +36,26 @@ produces cumulative polygons `C(i)` containing values greater than or equal to
 `polygon-clipping`:
 
 ```text
-band 0 = C(0) - C(1) = [t0, t1)
-band 1 = C(1) - C(2) = [t1, t2)
+band 0 = finite-data mask - C(0) = (-infinity, t0) (when `includeLower` is true)
+threshold band k = C(k) - C(k + 1) = [tk, t(k + 1))
 ...
-band n = C(n)        = [tn, infinity)
+threshold band n = C(n) = [tn, infinity) (when `includeUpper` is true)
 ```
 
-The lower unbounded band `(-infinity, t0)` is intentionally not generated. For
-`thresholds: [100, 200, 300]`, the output is therefore `[100, 200)`,
-`[200, 300)`, and `[300, infinity)`.
+Band indices describe the configured output-band sequence, so a tile can omit
+empty bands and therefore contain gaps in its band indices. When `includeLower`
+is true, threshold-based bands are shifted up by one; when it is false, the
+first threshold-based band remains band `0`.
+
+By default, `includeLower` is false and `includeUpper` is true. For `thresholds:
+[100, 200, 300]`, the default output is therefore `[100, 200)`, `[200, 300)`,
+and `[300, infinity)`. Set `includeLower: true` to include `(-infinity, 100)`,
+and set `includeUpper: false` to omit `[300, infinity)`.
 
 Every emitted feature has numeric properties:
 
-- `band`: zero-based threshold index
-- `min`: inclusive lower threshold
+- `band`: zero-based index in the configured output-band sequence
+- `min`: inclusive lower threshold; omitted from the lower unbounded band
 - `max`: exclusive upper threshold; omitted from the final unbounded band
 
 A band that has no geometry in a tile emits no feature.
@@ -110,8 +116,8 @@ default) and whose extent is the configured `extent`.
 D3 and `polygon-clipping` return a `MultiPolygon` for a band. The implementation
 emits each polygon component as a separate MLT `Polygon` feature and retains its
 interior rings as holes. It does not emit one `MultiPolygon` feature, and it does
-not assign feature ids. All components copy the band's `band`, `min`, and
-optional `max` properties.
+not assign feature ids. All components copy the band's `band` and whichever of
+the optional `min` and `max` boundaries apply.
 
 Before encoding, the implementation removes a repeated closing coordinate and
 consecutive duplicate coordinates from every ring. Ring closure and polygon

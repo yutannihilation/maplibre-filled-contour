@@ -13,7 +13,7 @@ const DEFAULT_BUFFER = 1;
 /**
  * Generates true, non-overlapping isobands from a padded row-major elevation grid.
  *
- * The first threshold is the lowest included value. The final band is unbounded.
+ * Unbounded lower and upper bands are controlled by `includeLower` and `includeUpper`.
  * `padding` describes how many grid samples surround the owning tile.
  */
 export function generateIsobands(
@@ -26,6 +26,9 @@ export function generateIsobands(
     options: IsobandGenerationOptions
 ): GeneratedIsoband[] {
     const thresholds = validateThresholds(options.thresholds);
+    const includeLower = options.includeLower ?? false;
+    const includeUpper = options.includeUpper ?? true;
+    const bandOffset = includeLower ? 1 : 0;
     const extent = positiveInteger(options.extent ?? DEFAULT_EXTENT, 'extent');
     const buffer = nonNegativeInteger(options.buffer ?? DEFAULT_BUFFER, 'buffer');
     if (width < 2 || height < 2 || values.length !== width * height) {
@@ -52,7 +55,33 @@ export function generateIsobands(
     const scaleY = extent / tileHeight;
 
     const result: GeneratedIsoband[] = [];
+    if (includeLower) {
+        const finiteMask = Float32Array.from(values, (value) => Number.isFinite(value) ? 1 : 0);
+        const finiteData = contours()
+            .size([width, height])
+            .smooth(false)
+            .thresholds([0.5])(finiteMask as unknown as number[])[0];
+        const first = cumulative[0];
+        let geometry = finiteData?.coordinates as MultiPolygon | undefined;
+        if (geometry?.length && first?.coordinates.length) {
+            geometry = polygonClipping.difference(
+                geometry,
+                first.coordinates as MultiPolygon
+            ) as MultiPolygon;
+        }
+        if (geometry?.length) {
+            geometry = polygonClipping.intersection(geometry, clipPolygon) as MultiPolygon;
+        }
+        if (geometry?.length) {
+            geometry = scaleGeometry(geometry, padding, scaleX, scaleY);
+            result.push({
+                properties: {band: 0, max: thresholds[0] as number},
+                geometry
+            });
+        }
+    }
     for (let index = 0; index < thresholds.length; index++) {
+        if (!includeUpper && index === thresholds.length - 1) break;
         const lower = cumulative[index];
         if (!lower || lower.coordinates.length === 0) continue;
         let geometry = lower.coordinates as MultiPolygon;
@@ -62,19 +91,23 @@ export function generateIsobands(
         }
         geometry = polygonClipping.intersection(geometry, clipPolygon) as MultiPolygon;
         if (!geometry.length) continue;
-        geometry = geometry.map((polygon) => polygon.map((ring) => ring.map(([x, y]): Position => [
-            Math.round((x - padding - 0.5) * scaleX),
-            Math.round((y - padding - 0.5) * scaleY)
-        ])));
+        geometry = scaleGeometry(geometry, padding, scaleX, scaleY);
         const max = thresholds[index + 1];
         result.push({
             properties: max === undefined
-                ? {band: index, min: thresholds[index] as number}
-                : {band: index, min: thresholds[index] as number, max},
+                ? {band: index + bandOffset, min: thresholds[index] as number}
+                : {band: index + bandOffset, min: thresholds[index] as number, max},
             geometry
         });
     }
     return result;
+}
+
+function scaleGeometry(geometry: MultiPolygon, padding: number, scaleX: number, scaleY: number): MultiPolygon {
+    return geometry.map((polygon) => polygon.map((ring) => ring.map(([x, y]): Position => [
+        Math.round((x - padding - 0.5) * scaleX),
+        Math.round((y - padding - 0.5) * scaleY)
+    ])));
 }
 
 export function validateThresholds(input: number[]): number[] {

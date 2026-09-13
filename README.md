@@ -28,7 +28,9 @@ const demSource = new filledContour.DemSource({
   maxzoom: 13,
   worker: true,
   cacheSize: 100,
-  timeoutMs: 10_000
+  timeoutMs: 10_000,
+  includeLower: false, // Omit [-infinity, 100); this is the default.
+  includeUpper: true   // Include [300, infinity); this is the default.
 });
 
 // Register protocols before constructing the map so MapLibre's workers know them.
@@ -63,11 +65,11 @@ map.on('load', () => {
 
 Every polygon has these properties:
 
-- `band`: zero-based band index
-- `min`: inclusive lower threshold
+- `band`: zero-based index in the configured output-band sequence
+- `min`: inclusive lower threshold, omitted for the lower unbounded band
 - `max`: exclusive upper threshold, omitted for the final unbounded band
 
-The default source layer is `isobands`. Override it with the constructor's `layer` option. `extent` defaults to 4096 and `buffer` defaults to one vector-tile unit.
+Set `includeLower: true` to include the band below the first threshold, or `includeUpper: false` to omit the band above the final threshold. The default source layer is `isobands`. Override it with the constructor's `layer` option. `extent` defaults to 4096 and `buffer` defaults to one vector-tile unit.
 
 ## Reuse decoded DEM tiles
 
