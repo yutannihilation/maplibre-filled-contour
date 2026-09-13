@@ -86,6 +86,28 @@ h1 {
     background: var(--color);
 }
 
+.repository-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 22px;
+    color: #2457e6;
+    font-size: 0.8rem;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.repository-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.repository-link:focus-visible {
+    border-radius: 3px;
+    outline: 3px solid rgb(36 87 230 / 30%);
+    outline-offset: 3px;
+}
+
 .maplibregl-ctrl-bottom-right {
     bottom: 58px;
 }
