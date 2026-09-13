@@ -14,8 +14,8 @@ const demSource = new DemSource({
     worker: true,
     cacheSize: 100,
     timeoutMs: 10_000,
-    lower: false,
-    upper: true
+    includeLower: false,
+    includeUpper: true
 });
 demSource.setupMaplibre(maplibregl);
 

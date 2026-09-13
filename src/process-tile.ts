@@ -9,8 +9,8 @@ export interface ProcessTileInput {
     tileHeight: number;
     padding: number;
     thresholds: number[];
-    lower: boolean;
-    upper: boolean;
+    includeLower: boolean;
+    includeUpper: boolean;
     layer: string;
     extent: number;
     buffer: number;
@@ -26,8 +26,8 @@ export function processTile(input: ProcessTileInput): Uint8Array {
         input.padding,
         {
             thresholds: input.thresholds,
-            lower: input.lower,
-            upper: input.upper,
+            includeLower: input.includeLower,
+            includeUpper: input.includeUpper,
             extent: input.extent,
             buffer: input.buffer
         }

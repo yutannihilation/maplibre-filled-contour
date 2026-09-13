@@ -13,7 +13,7 @@ const DEFAULT_BUFFER = 1;
 /**
  * Generates true, non-overlapping isobands from a padded row-major elevation grid.
  *
- * Unbounded lower and upper bands are controlled by `lower` and `upper`.
+ * Unbounded lower and upper bands are controlled by `includeLower` and `includeUpper`.
  * `padding` describes how many grid samples surround the owning tile.
  */
 export function generateIsobands(
@@ -26,8 +26,8 @@ export function generateIsobands(
     options: IsobandGenerationOptions
 ): GeneratedIsoband[] {
     const thresholds = validateThresholds(options.thresholds);
-    const includeLower = options.lower ?? false;
-    const includeUpper = options.upper ?? true;
+    const includeLower = options.includeLower ?? false;
+    const includeUpper = options.includeUpper ?? true;
     const bandOffset = includeLower ? 1 : 0;
     const extent = positiveInteger(options.extent ?? DEFAULT_EXTENT, 'extent');
     const buffer = nonNegativeInteger(options.buffer ?? DEFAULT_BUFFER, 'buffer');

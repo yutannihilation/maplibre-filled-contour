@@ -35,8 +35,8 @@ const defaultGetTile = async (url: string, controller: AbortController): Promise
 /** Generates filled contour vector tiles on demand from an XYZ raster DEM source. */
 export class DemSource {
     readonly thresholds: readonly number[];
-    readonly lower: boolean;
-    readonly upper: boolean;
+    readonly includeLower: boolean;
+    readonly includeUpper: boolean;
     readonly encoding: 'terrarium' | 'mapbox';
     readonly maxzoom: number;
     readonly layer: string;
@@ -64,8 +64,8 @@ export class DemSource {
         if (!options || typeof options !== 'object') throw new TypeError('DemSource options are required.');
         this.url = validateUrl(options.url);
         this.thresholds = Object.freeze(validateThresholds(options.thresholds));
-        this.lower = options.lower ?? false;
-        this.upper = options.upper ?? true;
+        this.includeLower = options.includeLower ?? false;
+        this.includeUpper = options.includeUpper ?? true;
         this.encoding = options.encoding ?? 'terrarium';
         if (this.encoding !== 'terrarium' && this.encoding !== 'mapbox') {
             throw new TypeError('encoding must be "terrarium" or "mapbox".');
@@ -212,8 +212,8 @@ export class DemSource {
             tileHeight: combined.height,
             padding: GRID_PADDING,
             thresholds: [...this.thresholds],
-            lower: this.lower,
-            upper: this.upper,
+            includeLower: this.includeLower,
+            includeUpper: this.includeUpper,
             layer: this.layer,
             extent: this.extent,
             buffer: this.buffer

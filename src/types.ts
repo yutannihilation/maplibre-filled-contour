@@ -33,9 +33,9 @@ export interface DemSourceOptions {
     /** Strictly increasing band boundaries. */
     thresholds: number[];
     /** Include the unbounded band below the first threshold. Defaults to false. */
-    lower?: boolean;
+    includeLower?: boolean;
     /** Include the unbounded band above the final threshold. Defaults to true. */
-    upper?: boolean;
+    includeUpper?: boolean;
     /** DEM pixel encoding. Defaults to `terrarium`. */
     encoding?: DemEncoding;
     /** Maximum zoom available from the DEM source. Defaults to 12. */
@@ -83,9 +83,9 @@ export interface TileCoordinate {
 export interface IsobandGenerationOptions {
     thresholds: number[];
     /** Include the unbounded band below the first threshold. Defaults to false. */
-    lower?: boolean;
+    includeLower?: boolean;
     /** Include the unbounded band above the final threshold. Defaults to true. */
-    upper?: boolean;
+    includeUpper?: boolean;
     extent?: number;
     buffer?: number;
 }

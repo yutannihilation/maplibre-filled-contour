@@ -41,7 +41,7 @@ describe('generateIsobands', () => {
     it('can include the lower band and exclude the upper band', () => {
         const bands = generateIsobands(
             gradient(7, 7), 7, 7, 4, 4, 1,
-            {thresholds: [200, 300, 400], lower: true, upper: false, extent: 4096, buffer: 0}
+            {thresholds: [200, 300, 400], includeLower: true, includeUpper: false, extent: 4096, buffer: 0}
         );
 
         expect(bands.map((band) => band.properties)).toEqual([
@@ -55,8 +55,8 @@ describe('generateIsobands', () => {
     it('emits only the lower band when all values are below the first threshold', () => {
         const bands = generateIsobands(new Float32Array(25).fill(50), 5, 5, 2, 2, 1, {
             thresholds: [100],
-            lower: true,
-            upper: false
+            includeLower: true,
+            includeUpper: false
         });
 
         expect(bands).toHaveLength(1);
@@ -101,8 +101,8 @@ describe('DemSource', () => {
             decodeImage
         }).setupMaplibre(maplibre as never);
 
-        expect(source.lower).toBe(false);
-        expect(source.upper).toBe(true);
+        expect(source.includeLower).toBe(false);
+        expect(source.includeUpper).toBe(true);
 
         expect(source.getSourceSpecification()).toEqual({
             type: 'vector',
@@ -131,13 +131,13 @@ describe('DemSource', () => {
         expect(maplibre.removeProtocol).toHaveBeenCalledTimes(2);
     });
 
-    it('passes lower and upper options through tile generation and MLT encoding', async () => {
+    it('passes includeLower and includeUpper through tile generation and MLT encoding', async () => {
         const source = new DemSource({
             id: 'bounded-terrain',
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100],
-            lower: true,
-            upper: false,
+            includeLower: true,
+            includeUpper: false,
             worker: false,
             getTile,
             decodeImage: async () => ({
@@ -147,8 +147,8 @@ describe('DemSource', () => {
             })
         });
 
-        expect(source.lower).toBe(true);
-        expect(source.upper).toBe(false);
+        expect(source.includeLower).toBe(true);
+        expect(source.includeUpper).toBe(false);
         const table = decodeTile(await source.getFilledContourTile(0, 0, 0))
             .find((candidate) => candidate.name === 'isobands');
         const features = table?.getFeatures() ?? [];
