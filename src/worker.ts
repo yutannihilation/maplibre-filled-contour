@@ -11,6 +11,12 @@ interface WorkerResponse {
     error?: string;
 }
 
+interface WorkerReady {
+    ready: true;
+}
+
+postMessage({ready: true} satisfies WorkerReady);
+
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     const {id, input} = event.data;
     try {

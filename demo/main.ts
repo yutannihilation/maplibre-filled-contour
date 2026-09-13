@@ -11,7 +11,6 @@ const demSource = new DemSource({
     thresholds: [0, 250, 500, 1000, 1500, 2000, 3000],
     encoding: 'terrarium',
     maxzoom: 13,
-    worker: true,
     cacheSize: 100,
     timeoutMs: 10_000,
     includeLower: false,

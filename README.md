@@ -2,7 +2,7 @@
 
 Generate filled contour (isoband) [MapLibre Tiles (MLT)](https://maplibre.org/maplibre-tile-spec/) in the browser from Terrarium or Mapbox Terrain-RGB tiles.
 
-The plugin fetches and caches the requested DEM tile and its neighbors, decodes elevations, constructs seamless isoband polygons, encodes them as MLT, and serves them to MapLibre through a custom protocol. Polygon generation can run in a module worker to keep the main thread responsive.
+The plugin fetches and caches the requested DEM tile and its neighbors, decodes elevations, constructs seamless isoband polygons, encodes them as MLT, and serves them to MapLibre through a custom protocol. Polygon generation runs in a module worker when available to keep the main thread responsive.
 
 ## Prior work
 
@@ -26,7 +26,6 @@ const demSource = new filledContour.DemSource({
   thresholds: [100, 200, 300],
   encoding: 'terrarium', // "terrarium" (default) or "mapbox"
   maxzoom: 13,
-  worker: true,
   cacheSize: 100,
   timeoutMs: 10_000,
   includeLower: false, // Omit [-infinity, 100); this is the default.
@@ -95,7 +94,7 @@ MapLibre GL JS 6 loads its worker as a separate ES module. Configure its URL bef
 - webpack 5, Rspack, or Rsbuild: `maplibregl.setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString())`.
 - Direct browser ESM from a CDN: no call is normally required because MapLibre 6 detects the worker relative to its own module URL.
 
-This is separate from the `worker` option on `DemSource`, which controls the plugin's isoband-computation worker. Set it to `false` only when you deliberately want contour generation on the main thread.
+This is separate from the plugin's isoband-computation worker. The plugin starts its worker lazily and automatically falls back to main-thread computation when web workers are unavailable or the worker cannot start.
 
 ## Development
 

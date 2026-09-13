@@ -51,13 +51,13 @@ export class DemSource {
 
     private readonly url: string;
     private readonly timeoutMs: number;
-    private readonly useWorker: boolean;
     private readonly getTileImpl: GetTileFunction;
     private readonly decodeImage: DecodeImageFunction;
     private readonly rawCache: AsyncLruCache<string, FetchResponse>;
     private readonly demCache: AsyncLruCache<string, DemTile>;
     private readonly outputCache: AsyncLruCache<string, Uint8Array>;
     private worker: IsobandWorker | undefined;
+    private workerUnavailable = false;
     private registry: ProtocolRegistry | undefined;
 
     constructor(options: DemSourceOptions) {
@@ -73,7 +73,6 @@ export class DemSource {
         this.maxzoom = integerInRange(options.maxzoom ?? 12, 0, 24, 'maxzoom');
         const cacheSize = positiveInteger(options.cacheSize ?? 100, 'cacheSize');
         this.timeoutMs = positiveNumber(options.timeoutMs ?? 10_000, 'timeoutMs');
-        this.useWorker = options.worker ?? true;
         this.layer = nonEmptyString(options.layer ?? 'isobands', 'layer');
         this.extent = positiveInteger(options.extent ?? 4096, 'extent');
         this.buffer = integerInRange(options.buffer ?? 1, 0, this.extent, 'buffer');
@@ -218,11 +217,26 @@ export class DemSource {
             extent: this.extent,
             buffer: this.buffer
         };
-        if (this.useWorker && typeof Worker !== 'undefined') {
-            this.worker ??= new IsobandWorker();
-            return this.worker.process(input, controller);
+        return this.processTile(input, controller);
+    }
+
+    private async processTile(input: ProcessTileInput, controller: AbortController): Promise<Uint8Array> {
+        if (this.workerUnavailable || typeof Worker === 'undefined') return processTile(input);
+
+        let worker: IsobandWorker;
+        try {
+            worker = this.worker ??= new IsobandWorker();
+            await worker.ready();
+        } catch {
+            this.workerUnavailable = true;
+            this.worker?.terminate();
+            this.worker = undefined;
+            throwIfAborted(controller);
+            return processTile(input);
         }
-        return processTile(input);
+
+        throwIfAborted(controller);
+        return worker.process(input, controller);
     }
 
     private tileUrl(z: number, x: number, y: number): string {

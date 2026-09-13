@@ -154,10 +154,12 @@ tiles. Concurrent consumers of the same cache key share in-flight work. The
 are forwarded by the shared-raster protocol when the upstream response provides
 them.
 
-When `worker` is true and the browser provides `Worker`, the materialized
-`Float32Array` is transferred to one lazily created module worker. Isoband
-generation, polygon Boolean operations, and MLT encoding then run in that
-worker. Otherwise the same `processTile()` function runs on the main thread.
+When the browser provides `Worker`, the materialized `Float32Array` is
+transferred to one lazily created module worker after it reports that it is
+ready. Isoband generation, polygon Boolean operations, and MLT encoding then
+run in that worker. If workers are unavailable or the worker cannot start, the
+source permanently falls back to the same `processTile()` function on the main
+thread.
 Aborting a consumer stops waiting for its worker result, but does not interrupt
 a calculation already executing inside the worker.
 
