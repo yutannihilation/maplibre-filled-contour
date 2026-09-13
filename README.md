@@ -65,7 +65,7 @@ map.on('load', () => {
 
 Every polygon has these properties:
 
-- `band`: zero-based output band index
+- `band`: zero-based index in the configured output-band sequence
 - `min`: inclusive lower threshold, omitted for the lower unbounded band
 - `max`: exclusive upper threshold, omitted for the final unbounded band
 

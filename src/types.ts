@@ -61,7 +61,7 @@ export interface DemSourceOptions {
 }
 
 export interface IsobandProperties {
-    /** Zero-based position among the configured output bands. */
+    /** Zero-based position in the configured output-band sequence. */
     band: number;
     /** Inclusive lower boundary; absent on the unbounded lower band. */
     min?: number;

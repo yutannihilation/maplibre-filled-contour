@@ -62,6 +62,21 @@ describe('generateIsobands', () => {
         expect(bands).toHaveLength(1);
         expect(bands[0]?.properties).toEqual({band: 0, max: 100});
     });
+
+    it('excludes invalid samples from the lower band', () => {
+        const values = new Float32Array(49).fill(50);
+        values[3 * 7 + 3] = Number.NaN;
+        const bands = generateIsobands(values, 7, 7, 4, 4, 1, {
+            thresholds: [100],
+            includeLower: true,
+            includeUpper: false,
+            buffer: 0
+        });
+
+        expect(bands).toHaveLength(1);
+        expect(bands[0]?.properties).toEqual({band: 0, max: 100});
+        expect(bands[0]?.geometry.some((polygon) => polygon.length > 1)).toBe(true);
+    });
 });
 
 describe('DEM decoding', () => {

@@ -56,11 +56,23 @@ export function generateIsobands(
 
     const result: GeneratedIsoband[] = [];
     if (includeLower) {
+        const finiteMask = Float32Array.from(values, (value) => Number.isFinite(value) ? 1 : 0);
+        const finiteData = contours()
+            .size([width, height])
+            .smooth(false)
+            .thresholds([0.5])(finiteMask as unknown as number[])[0];
         const first = cumulative[0];
-        let geometry = first?.coordinates.length
-            ? polygonClipping.difference(clipPolygon, first.coordinates as MultiPolygon) as MultiPolygon
-            : clipPolygon;
-        if (geometry.length) {
+        let geometry = finiteData?.coordinates as MultiPolygon | undefined;
+        if (geometry?.length && first?.coordinates.length) {
+            geometry = polygonClipping.difference(
+                geometry,
+                first.coordinates as MultiPolygon
+            ) as MultiPolygon;
+        }
+        if (geometry?.length) {
+            geometry = polygonClipping.intersection(geometry, clipPolygon) as MultiPolygon;
+        }
+        if (geometry?.length) {
             geometry = scaleGeometry(geometry, padding, scaleX, scaleY);
             result.push({
                 properties: {band: 0, max: thresholds[0] as number},
