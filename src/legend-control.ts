@@ -20,10 +20,9 @@ export class IsobandLegendControl implements IControl {
             .filter(Boolean).join(' ');
         container.setAttribute('role', 'group');
         const title = this.options.title === undefined ? 'Elevation' : this.options.title;
-        container.setAttribute(
-            'aria-label',
-            this.options.ariaLabel ?? (title === false ? 'Contour legend' : title)
-        );
+        const ariaLabel = this.options.ariaLabel?.trim()
+            || (title === false || !title.trim() ? 'Contour legend' : title);
+        container.setAttribute('aria-label', ariaLabel);
         Object.assign(container.style, {
             background: 'var(--maplibre-filled-contour-legend-background, rgba(255, 255, 255, 0.94))',
             borderRadius: 'var(--maplibre-filled-contour-legend-border-radius, 4px)',

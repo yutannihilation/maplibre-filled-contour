@@ -45,9 +45,11 @@ export function createIsobandFillColorExpression(
     bands: readonly IsobandBand[],
     fallbackColor = 'rgba(0, 0, 0, 0)'
 ): IsobandFillColorExpression {
+    const validatedFallback = validateColor(fallbackColor, 'fallbackColor');
+    if (bands.length === 0) return ['to-color', validatedFallback] as IsobandFillColorExpression;
     const expression: unknown[] = ['match', ['get', 'band']];
     for (const band of bands) expression.push(band.band, band.color);
-    expression.push(validateColor(fallbackColor, 'fallbackColor'));
+    expression.push(validatedFallback);
     return expression as IsobandFillColorExpression;
 }
 
