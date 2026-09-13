@@ -1,0 +1,51 @@
+{
+  "name": "maplibre-filled-contour",
+  "version": "0.1.0",
+  "description": "Generate filled contour (isoband) vector tiles from raster DEM sources in MapLibre GL JS",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "demo": "vite demo --config vite.config.ts --host 127.0.0.1",
+    "demo:check": "tsc -p tsconfig.demo.json",
+    "demo:build": "vite build demo --config vite.config.ts --outDir ../demo-dist --emptyOutDir",
+    "prepack": "pnpm build",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "maplibre",
+    "isobands",
+    "contours",
+    "raster-dem",
+    "vector-tiles",
+    "terrain"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@maplibre/mlt": "^1.2.1",
+    "d3-contour": "4.0.2",
+    "polygon-clipping": "0.15.7"
+  },
+  "peerDependencies": {
+    "maplibre-gl": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/d3-contour": "3.0.6",
+    "maplibre-gl": "^6.9.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  },
+  "packageManager": "pnpm@12.3.4"
+}
