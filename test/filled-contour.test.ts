@@ -1,6 +1,8 @@
 import {decodeTile, GEOMETRY_TYPE} from '@maplibre/mlt';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {
+    createIsobandBands,
+    createIsobandStyle,
     decodeParsedImage,
     DemSource,
     generateIsobands,
@@ -81,6 +83,88 @@ describe('generateIsobands', () => {
     });
 });
 
+describe('generated styles and legends', () => {
+    it('creates one colored model entry for every emitted band', () => {
+        expect(createIsobandBands(
+            [100, 200, 300], true, false, ['red', 'green', 'blue']
+        )).toEqual([
+            {band: 0, max: 100, color: 'red'},
+            {band: 1, min: 100, max: 200, color: 'green'},
+            {band: 2, min: 200, max: 300, color: 'blue'}
+        ]);
+    });
+
+    it('generates a fill expression keyed by band and samples color interpolators', () => {
+        const color = vi.fn((_position: number, band: number) => `color-${band}`);
+        const style = createIsobandStyle([100, 200, 300], false, true, {colors: color});
+
+        expect(style.fillColor).toEqual([
+            'match', ['get', 'band'],
+            0, 'color-0',
+            1, 'color-1',
+            2, 'color-2',
+            'rgba(0, 0, 0, 0)'
+        ]);
+        expect(color).toHaveBeenNthCalledWith(1, 0, 0, 3);
+        expect(color).toHaveBeenNthCalledWith(2, 0.5, 1, 3);
+        expect(color).toHaveBeenNthCalledWith(3, 1, 2, 3);
+    });
+
+    it('rejects palettes whose size differs from the emitted band count', () => {
+        expect(() => createIsobandBands([100, 200], false, true, ['red']))
+            .toThrow(/exactly 2 entries/);
+    });
+
+    it('generates a count-independent sequential palette when colors are omitted', () => {
+        expect(createIsobandBands([100, 200, 300]).map((band) => band.color)).toEqual([
+            'hsl(210, 30%, 92%)',
+            'hsl(210, 60%, 68%)',
+            'hsl(210, 90%, 44%)'
+        ]);
+    });
+
+    it('creates formatted, accessible legend content without depending on MapLibre internals', () => {
+        class FakeElement {
+            className = '';
+            textContent = '';
+            readonly children: FakeElement[] = [];
+            readonly attributes = new Map<string, string>();
+            readonly style: Record<string, string> = {};
+            removed = false;
+            append(...children: FakeElement[]): void { this.children.push(...children); }
+            setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
+            remove(): void { this.removed = true; }
+        }
+        vi.stubGlobal('document', {createElement: () => new FakeElement()});
+
+        const source = new DemSource({
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100, 200],
+            colors: ['red', 'green', 'blue'],
+            includeLower: true
+        });
+        const legend = source.getLegendControl({
+            title: 'Height',
+            unit: 'm',
+            position: 'top-right'
+        });
+        const element = legend.onAdd({} as never) as unknown as FakeElement;
+
+        expect(legend.getDefaultPosition()).toBe('top-right');
+        expect(element.attributes.get('aria-label')).toBe('Height');
+        expect(element.style.minWidth).toContain('--maplibre-filled-contour-legend-min-width');
+        expect(element.style.width).toContain('--maplibre-filled-contour-legend-width');
+        expect(element.children[0]?.textContent).toBe('Height');
+        const items = element.children[1]?.children ?? [];
+        expect(items.map((item) => item.children[1]?.textContent)).toEqual([
+            '< 100 m', '100–200 m', '≥ 200 m'
+        ]);
+        expect(items.every((item) => item.children[1]?.style.whiteSpace?.includes('nowrap') === true)).toBe(true);
+        legend.onRemove({} as never);
+        expect(element.removed).toBe(true);
+    });
+});
+
 describe('DEM decoding', () => {
     it('decodes Terrarium and Mapbox Terrain-RGB pixels', () => {
         const rgba = new Uint8ClampedArray([128, 1, 128, 255]);
@@ -112,6 +196,7 @@ describe('DemSource', () => {
             id: 'terrain',
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100, 200, 300],
+            colors: ['red', 'green', 'blue'],
             maxzoom: 1,
             getTile,
             decodeImage
@@ -147,11 +232,59 @@ describe('DemSource', () => {
         expect(maplibre.removeProtocol).toHaveBeenCalledTimes(2);
     });
 
+    it('adds and removes a synchronized source, layer, and legend', () => {
+        const sources = new Map<string, unknown>();
+        const layers = new Map<string, {paint?: Record<string, unknown>}>();
+        const map = {
+            addSource: vi.fn((id: string, specification: unknown) => sources.set(id, specification)),
+            addLayer: vi.fn((specification: {id: string; paint?: Record<string, unknown>}) => {
+                layers.set(specification.id, specification);
+            }),
+            addControl: vi.fn(),
+            removeControl: vi.fn(),
+            getLayer: vi.fn((id: string) => layers.get(id)),
+            removeLayer: vi.fn((id: string) => layers.delete(id)),
+            getSource: vi.fn((id: string) => sources.get(id)),
+            removeSource: vi.fn((id: string) => sources.delete(id))
+        };
+        const source = new DemSource({
+            id: 'add-to-map',
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100, 200, 300],
+            colors: ['red', 'green', 'blue']
+        });
+
+        const added = source.addTo(map as never, {
+            sourceId: 'elevation',
+            id: 'elevation-fill',
+            paint: {'fill-opacity': 0.5},
+            legend: {title: 'Height', unit: 'm'}
+        });
+
+        expect(layers.get('elevation-fill')?.paint).toEqual({
+            'fill-opacity': 0.5,
+            'fill-color': [
+                'match', ['get', 'band'],
+                0, 'red', 1, 'green', 2, 'blue',
+                'rgba(0, 0, 0, 0)'
+            ]
+        });
+        expect(map.addControl).toHaveBeenCalledWith(added.legend);
+
+        added.remove();
+        added.remove();
+        expect(map.removeControl).toHaveBeenCalledTimes(1);
+        expect(map.removeLayer).toHaveBeenCalledWith('elevation-fill');
+        expect(map.removeSource).toHaveBeenCalledWith('elevation');
+        source.destroy();
+    });
+
     it('passes includeLower and includeUpper through tile generation and MLT encoding', async () => {
         const source = new DemSource({
             id: 'bounded-terrain',
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100],
+            colors: ['red'],
             includeLower: true,
             includeUpper: false,
             getTile,
@@ -176,8 +309,19 @@ describe('DemSource', () => {
     it('validates thresholds and times out fetches', async () => {
         expect(() => new DemSource({
             url: 'https://example.test/{z}/{x}/{y}.png',
-            thresholds: [100, 100]
+            thresholds: [100, 100],
+            colors: ['red', 'green']
         })).toThrow(/strictly increasing/);
+        expect(() => new DemSource({
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100, 200],
+            colors: ['red']
+        })).toThrow(/exactly 2 entries/);
+        const defaultColors = new DemSource({
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100, 200, 300, 400]
+        });
+        expect(defaultColors.colors).toHaveLength(4);
 
         const never: GetTileFunction = (_url, controller) => new Promise((_resolve, reject) => {
             controller.signal.addEventListener('abort', () => reject(new Error('aborted')), {once: true});
@@ -185,6 +329,7 @@ describe('DemSource', () => {
         const source = new DemSource({
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100],
+            colors: ['red'],
             timeoutMs: 5,
             getTile: never,
             decodeImage
@@ -222,6 +367,7 @@ describe('DemSource', () => {
             id: 'worker-ready',
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100],
+            colors: ['red'],
             getTile,
             decodeImage
         });
@@ -246,6 +392,7 @@ describe('DemSource', () => {
             id: 'worker-construction-failure',
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100],
+            colors: ['red'],
             maxzoom: 1,
             getTile,
             decodeImage
@@ -283,6 +430,7 @@ describe('DemSource', () => {
             id: 'worker-load-failure',
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100],
+            colors: ['red'],
             maxzoom: 1,
             getTile,
             decodeImage
