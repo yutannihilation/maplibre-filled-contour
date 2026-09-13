@@ -1,5 +1,5 @@
 import {decodeTile, GEOMETRY_TYPE} from '@maplibre/mlt';
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 import {
     decodeParsedImage,
     DemSource,
@@ -12,6 +12,8 @@ function gradient(width: number, height: number): Float32Array {
     return Float32Array.from({length: width * height}, (_, index) =>
         (index % width) * 100);
 }
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('generateIsobands', () => {
     it('creates finite adjacent bands and an unbounded upper band, but no lower band', () => {
@@ -111,7 +113,6 @@ describe('DemSource', () => {
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100, 200, 300],
             maxzoom: 1,
-            worker: false,
             getTile,
             decodeImage
         }).setupMaplibre(maplibre as never);
@@ -153,7 +154,6 @@ describe('DemSource', () => {
             thresholds: [100],
             includeLower: true,
             includeUpper: false,
-            worker: false,
             getTile,
             decodeImage: async () => ({
                 width: 4,
@@ -186,10 +186,112 @@ describe('DemSource', () => {
             url: 'https://example.test/{z}/{x}/{y}.png',
             thresholds: [100],
             timeoutMs: 5,
-            worker: false,
             getTile: never,
             decodeImage
         });
         await expect(source.getDemTile(0, 0, 0)).rejects.toThrow(/timed out|aborted/);
+    });
+
+    it('automatically uses a worker after it reports that it is ready', async () => {
+        let ready = false;
+        let postedBeforeReady = false;
+        let constructions = 0;
+        class ReadyWorker {
+            onmessage: ((event: MessageEvent) => void) | null = null;
+            onerror: ((event: ErrorEvent) => void) | null = null;
+
+            constructor() {
+                constructions++;
+                queueMicrotask(() => {
+                    ready = true;
+                    this.onmessage?.({data: {ready: true}} as MessageEvent);
+                });
+            }
+
+            postMessage(message: {id: number}): void {
+                if (!ready) postedBeforeReady = true;
+                const data = Uint8Array.from([1, 2, 3]).buffer;
+                queueMicrotask(() => this.onmessage?.({data: {id: message.id, data}} as MessageEvent));
+            }
+
+            terminate(): void {}
+        }
+        vi.stubGlobal('Worker', ReadyWorker);
+
+        const source = new DemSource({
+            id: 'worker-ready',
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100],
+            getTile,
+            decodeImage
+        });
+
+        expect(await source.getFilledContourTile(0, 0, 0)).toEqual(Uint8Array.from([1, 2, 3]));
+        expect(constructions).toBe(1);
+        expect(postedBeforeReady).toBe(false);
+        source.destroy();
+    });
+
+    it('permanently falls back when worker construction fails', async () => {
+        let constructions = 0;
+        class ThrowingWorker {
+            constructor() {
+                constructions++;
+                throw new Error('Workers are blocked.');
+            }
+        }
+        vi.stubGlobal('Worker', ThrowingWorker);
+
+        const source = new DemSource({
+            id: 'worker-construction-failure',
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100],
+            maxzoom: 1,
+            getTile,
+            decodeImage
+        });
+
+        expect((await source.getFilledContourTile(0, 0, 0)).byteLength).toBeGreaterThan(0);
+        expect((await source.getFilledContourTile(1, 0, 0)).byteLength).toBeGreaterThan(0);
+        expect(constructions).toBe(1);
+        source.destroy();
+    });
+
+    it('permanently falls back when the worker module fails to load', async () => {
+        let constructions = 0;
+        let terminations = 0;
+        class FailingWorker {
+            onmessage: ((event: MessageEvent) => void) | null = null;
+            onerror: ((event: ErrorEvent) => void) | null = null;
+
+            constructor() {
+                constructions++;
+                queueMicrotask(() => this.onerror?.({message: 'Could not load worker module.'} as ErrorEvent));
+            }
+
+            postMessage(): void {
+                throw new Error('Input was transferred before worker startup completed.');
+            }
+
+            terminate(): void {
+                terminations++;
+            }
+        }
+        vi.stubGlobal('Worker', FailingWorker);
+
+        const source = new DemSource({
+            id: 'worker-load-failure',
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: [100],
+            maxzoom: 1,
+            getTile,
+            decodeImage
+        });
+
+        expect((await source.getFilledContourTile(0, 0, 0)).byteLength).toBeGreaterThan(0);
+        expect((await source.getFilledContourTile(1, 0, 0)).byteLength).toBeGreaterThan(0);
+        expect(constructions).toBe(1);
+        expect(terminations).toBe(1);
+        source.destroy();
     });
 });

@@ -6,6 +6,10 @@ interface WorkerResponse {
     error?: string;
 }
 
+interface WorkerReady {
+    ready: true;
+}
+
 interface Pending {
     resolve: (data: Uint8Array) => void;
     reject: (error: Error) => void;
@@ -13,13 +17,24 @@ interface Pending {
 
 export class IsobandWorker {
     private readonly worker: Worker;
+    private readonly startup: Promise<void>;
     private readonly pending = new Map<number, Pending>();
     private nextId = 0;
+    private resolveStartup!: () => void;
+    private rejectStartup!: (error: Error) => void;
 
     constructor() {
         this.worker = new Worker(new URL('./worker.js', import.meta.url), {type: 'module'});
-        this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+        this.startup = new Promise<void>((resolve, reject) => {
+            this.resolveStartup = resolve;
+            this.rejectStartup = reject;
+        });
+        this.worker.onmessage = (event: MessageEvent<WorkerResponse | WorkerReady>) => {
             const response = event.data;
+            if ('ready' in response) {
+                this.resolveStartup();
+                return;
+            }
             const pending = this.pending.get(response.id);
             if (!pending) return;
             this.pending.delete(response.id);
@@ -28,9 +43,14 @@ export class IsobandWorker {
         };
         this.worker.onerror = (event) => {
             const error = new Error(event.message || 'Isoband worker failed.');
+            this.rejectStartup(error);
             for (const pending of this.pending.values()) pending.reject(error);
             this.pending.clear();
         };
+    }
+
+    ready(): Promise<void> {
+        return this.startup;
     }
 
     process(input: ProcessTileInput, abortController: AbortController): Promise<Uint8Array> {
@@ -53,13 +73,20 @@ export class IsobandWorker {
                     reject(error);
                 }
             });
-            this.worker.postMessage({id, input}, [input.values.buffer]);
+            try {
+                this.worker.postMessage({id, input}, [input.values.buffer]);
+            } catch (error) {
+                this.pending.delete(id);
+                abortController.signal.removeEventListener('abort', onAbort);
+                reject(error);
+            }
         });
     }
 
     terminate(): void {
         this.worker.terminate();
         const error = new Error('Isoband worker terminated.');
+        this.rejectStartup(error);
         for (const pending of this.pending.values()) pending.reject(error);
         this.pending.clear();
     }

@@ -40,8 +40,6 @@ export interface DemSourceOptions {
     encoding?: DemEncoding;
     /** Maximum zoom available from the DEM source. Defaults to 12. */
     maxzoom?: number;
-    /** Run polygon generation and vector-tile encoding in a web worker. Defaults to true. */
-    worker?: boolean;
     /** Number of most-recent DEM and generated tiles retained. Defaults to 100. */
     cacheSize?: number;
     /** Fetch timeout in milliseconds. Defaults to 10,000. */
