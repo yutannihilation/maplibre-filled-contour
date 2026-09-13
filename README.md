@@ -24,6 +24,7 @@ const demSource = new filledContour.DemSource({
   // Produces [100, 200), [200, 300), and [300, infinity).
   // The band below 100 is intentionally omitted.
   thresholds: [100, 200, 300],
+  colors: ['#d8f3dc', '#74c69d', '#1b4332'],
   encoding: 'terrarium', // "terrarium" (default) or "mapbox"
   maxzoom: 13,
   cacheSize: 100,
@@ -41,26 +42,129 @@ const map = new maplibregl.Map({
 });
 
 map.on('load', () => {
-  map.addSource('filled-contours', demSource.getSourceSpecification());
-
-  map.addLayer({
+  demSource.addTo(map, {
+    sourceId: 'filled-contours',
     id: 'filled-contours',
-    type: 'fill',
-    source: 'filled-contours',
-    'source-layer': demSource.layer, // "isobands" by default
     paint: {
-      'fill-color': [
-        'match', ['get', 'min'],
-        100, '#d8f3dc',
-        200, '#74c69d',
-        300, '#1b4332',
-        '#000000'
-      ],
       'fill-opacity': 0.72
+    },
+    legend: {
+      title: 'Elevation',
+      unit: 'm',
+      position: 'bottom-left'
     }
   });
 });
 ```
+
+> **Note:** `colors` is optional. If omitted, the plugin generates a
+> single-hue sequential blue ramp sized to the number of emitted bands.
+
+`addTo()` adds the vector source, generated fill layer, and legend together. It must
+be called after the map's style has loaded. The returned handle removes everything
+it added:
+
+```js
+const added = demSource.addTo(map, options);
+added.remove();
+```
+
+The constructor's optional `colors` setting accepts either one color per emitted
+band or a function receiving a normalized position, band index, and total band
+count. This makes color interpolators such as those from `d3-scale-chromatic`
+usable without adding them as a required dependency:
+
+```js
+import {interpolateTerrain} from 'd3-scale-chromatic';
+
+const demSource = new filledContour.DemSource({
+  url: 'https://url/of/dem/source/{z}/{x}/{y}.png',
+  thresholds: [100, 200, 300],
+  colors: interpolateTerrain
+});
+
+demSource.addTo(map, {
+  sourceId: 'filled-contours',
+  id: 'filled-contours',
+  legend: {title: 'Elevation', unit: 'm'}
+});
+```
+
+For manual composition, use `getLayerSpecification()`,
+`getFillColorExpression()`, `getBands()`, and `getLegendControl()`. All of them
+reuse the colors configured on the source:
+
+```js
+map.addSource('filled-contours', demSource.getSourceSpecification());
+map.addLayer(demSource.getLayerSpecification({
+  id: 'filled-contours',
+  source: 'filled-contours',
+  paint: {'fill-opacity': 0.72}
+}));
+map.addControl(demSource.getLegendControl({
+  title: 'Elevation',
+  unit: 'm'
+}));
+```
+
+The generated expression matches the always-present `band` property. When
+`colors` is omitted, the plugin generates a single-hue blue ramp that works with
+any band count. An explicit color array must contain exactly one entry for every
+emitted band; mismatches are rejected when `DemSource` is constructed.
+
+### Customizing the legend with CSS
+
+Use the legend's `className` option to give a particular legend a styling hook:
+
+```js
+demSource.addTo(map, {
+  sourceId: 'filled-contours',
+  id: 'filled-contours',
+  legend: {
+    title: 'Elevation',
+    unit: 'm',
+    className: 'elevation-legend'
+  }
+});
+```
+
+The built-in appearance is exposed through CSS custom properties. Set only the
+values that need to differ:
+
+```css
+.elevation-legend {
+  --maplibre-filled-contour-legend-background: rgb(24 30 42 / 92%);
+  --maplibre-filled-contour-legend-color: white;
+  --maplibre-filled-contour-legend-font: 13px/1.4 system-ui, sans-serif;
+  --maplibre-filled-contour-legend-min-width: 120px;
+  --maplibre-filled-contour-legend-padding: 12px 14px;
+  --maplibre-filled-contour-legend-border-radius: 8px;
+  --maplibre-filled-contour-legend-box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+  --maplibre-filled-contour-legend-title-weight: 600;
+  --maplibre-filled-contour-legend-title-spacing: 8px;
+  --maplibre-filled-contour-legend-row-gap: 5px;
+  --maplibre-filled-contour-legend-item-gap: 8px;
+  --maplibre-filled-contour-legend-swatch-size: 16px;
+  --maplibre-filled-contour-legend-swatch-border: 1px solid rgb(255 255 255 / 35%);
+  --maplibre-filled-contour-legend-swatch-border-radius: 3px;
+}
+```
+
+The width-related variables are
+`--maplibre-filled-contour-legend-width`,
+`--maplibre-filled-contour-legend-min-width`, and
+`--maplibre-filled-contour-legend-max-width`. Labels do not wrap by default;
+set `--maplibre-filled-contour-legend-white-space: normal` to allow wrapping.
+
+For styling beyond the custom properties, the control exposes these stable
+classes:
+
+- `.maplibre-filled-contour-legend`
+- `.maplibre-filled-contour-legend__title`
+- `.maplibre-filled-contour-legend__items`
+- `.maplibre-filled-contour-legend__item`
+- `.maplibre-filled-contour-legend__swatch`
+- `.maplibre-filled-contour-legend__label`
 
 Every polygon has these properties:
 

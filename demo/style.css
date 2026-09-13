@@ -64,28 +64,6 @@ h1 {
     line-height: 1.55;
 }
 
-.legend {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px 16px;
-    margin-top: 20px;
-    font-size: 0.73rem;
-    font-weight: 700;
-}
-
-.legend span {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.legend i {
-    width: 10px;
-    height: 10px;
-    border-radius: 3px;
-    background: var(--color);
-}
-
 .repository-link {
     display: inline-flex;
     align-items: center;

@@ -2,13 +2,23 @@ import type {AddProtocolAction} from 'maplibre-gl';
 import {AsyncLruCache} from './cache.js';
 import defaultDecodeImage from './decode-image.js';
 import {HeightTile} from './height-tile.js';
+import {IsobandLegendControl} from './legend-control.js';
 import {processTile, type ProcessTileInput} from './process-tile.js';
+import {createIsobandBands, createIsobandFillColorExpression} from './style.js';
 import type {
+    AddedIsobandLayer,
+    AddIsobandLayerOptions,
     DemSourceOptions,
     DemTile,
     DecodeImageFunction,
     FetchResponse,
     GetTileFunction,
+    IsobandBand,
+    IsobandFillColorExpression,
+    IsobandFillLayerSpecification,
+    IsobandLayerOptions,
+    IsobandLegendOptions,
+    IsobandMap,
     IsobandSourceSpecification
 } from './types.js';
 import {IsobandWorker} from './worker-client.js';
@@ -35,6 +45,7 @@ const defaultGetTile = async (url: string, controller: AbortController): Promise
 /** Generates filled contour vector tiles on demand from an XYZ raster DEM source. */
 export class DemSource {
     readonly thresholds: readonly number[];
+    readonly colors: readonly string[];
     readonly includeLower: boolean;
     readonly includeUpper: boolean;
     readonly encoding: 'terrarium' | 'mapbox';
@@ -66,6 +77,13 @@ export class DemSource {
         this.thresholds = Object.freeze(validateThresholds(options.thresholds));
         this.includeLower = options.includeLower ?? false;
         this.includeUpper = options.includeUpper ?? true;
+        const bands = createIsobandBands(
+            this.thresholds,
+            this.includeLower,
+            this.includeUpper,
+            options.colors
+        );
+        this.colors = Object.freeze(bands.map((band) => band.color));
         this.encoding = options.encoding ?? 'terrarium';
         if (this.encoding !== 'terrarium' && this.encoding !== 'mapbox') {
             throw new TypeError('encoding must be "terrarium" or "mapbox".');
@@ -116,6 +134,87 @@ export class DemSource {
             maxzoom: this.maxzoom,
             encoding: 'mlt'
         };
+    }
+
+    /** Returns the ordered ranges and colors shared by generated styles and legends. */
+    getBands(): IsobandBand[] {
+        return createIsobandBands(
+            this.thresholds,
+            this.includeLower,
+            this.includeUpper,
+            this.colors
+        );
+    }
+
+    /** Generates a MapLibre fill-color expression that matches the output `band` property. */
+    getFillColorExpression(
+        options: Pick<IsobandLayerOptions, 'fallbackColor'> = {}
+    ): IsobandFillColorExpression {
+        return createIsobandFillColorExpression(this.getBands(), options.fallbackColor);
+    }
+
+    /** Generates a ready-to-add MapLibre fill layer specification. */
+    getLayerSpecification(options: IsobandLayerOptions): IsobandFillLayerSpecification {
+        const specification: IsobandFillLayerSpecification = {
+            id: nonEmptyString(options.id, 'id'),
+            type: 'fill',
+            source: nonEmptyString(options.source, 'source'),
+            'source-layer': this.layer,
+            paint: {
+                ...options.paint,
+                'fill-color': this.getFillColorExpression(options)
+            }
+        };
+        if (options.layout !== undefined) specification.layout = options.layout;
+        if (options.minzoom !== undefined) specification.minzoom = options.minzoom;
+        if (options.maxzoom !== undefined) specification.maxzoom = options.maxzoom;
+        return specification;
+    }
+
+    /** Creates a MapLibre control using the same band model as the generated fill style. */
+    getLegendControl(options: IsobandLegendOptions = {}): IsobandLegendControl {
+        return new IsobandLegendControl(this.getBands(), options);
+    }
+
+    /** Adds the generated source, fill layer, and (by default) legend to a loaded map. */
+    addTo(map: IsobandMap, options: AddIsobandLayerOptions): AddedIsobandLayer {
+        const {sourceId, beforeId, legend: legendOption, ...layerOptions} = options;
+        const source = nonEmptyString(sourceId, 'sourceId');
+        map.addSource(source, this.getSourceSpecification());
+
+        let layerAdded = false;
+        let legend: IsobandLegendControl | undefined;
+        try {
+            map.addLayer(this.getLayerSpecification({...layerOptions, source}), beforeId);
+            layerAdded = true;
+            if (legendOption !== false) {
+                const legendOptions = legendOption === true || legendOption === undefined ? {} : legendOption;
+                legend = this.getLegendControl({
+                    ...legendOptions
+                });
+                map.addControl(legend);
+            }
+        } catch (error) {
+            if (legend) map.removeControl(legend);
+            if (layerAdded && map.getLayer(options.id)) map.removeLayer(options.id);
+            if (map.getSource(source)) map.removeSource(source);
+            throw error;
+        }
+
+        let removed = false;
+        const result: AddedIsobandLayer = {
+            sourceId: source,
+            layerId: options.id,
+            remove: () => {
+                if (removed) return;
+                removed = true;
+                if (legend) map.removeControl(legend);
+                if (map.getLayer(options.id)) map.removeLayer(options.id);
+                if (map.getSource(source)) map.removeSource(source);
+            }
+        };
+        if (legend) Object.assign(result, {legend});
+        return result;
     }
 
     /** Alias for `getSourceSpecification()`. */
