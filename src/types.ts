@@ -61,7 +61,7 @@ export interface DemSourceOptions {
 }
 
 export interface IsobandProperties {
-    /** Threshold index for this band. The lower unbounded band uses -1. */
+    /** Zero-based position among the configured output bands. */
     band: number;
     /** Inclusive lower boundary; absent on the unbounded lower band. */
     min?: number;

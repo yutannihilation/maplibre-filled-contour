@@ -36,12 +36,15 @@ produces cumulative polygons `C(i)` containing values greater than or equal to
 `polygon-clipping`:
 
 ```text
-band -1 = clip - C(0)  = (-infinity, t0) (when `lower` is true)
-band 0  = C(0) - C(1) = [t0, t1)
-band 1 = C(1) - C(2) = [t1, t2)
+band 0 = clip - C(0) = (-infinity, t0) (when `lower` is true)
+threshold band k = C(k) - C(k + 1) = [tk, t(k + 1))
 ...
-band n = C(n)          = [tn, infinity) (when `upper` is true)
+threshold band n = C(n) = [tn, infinity) (when `upper` is true)
 ```
+
+Band indices describe the emitted sequence. When `lower` is true, threshold-
+based bands are shifted up by one; when it is false, the first threshold-based
+band remains band `0`.
 
 By default, `lower` is false and `upper` is true. For `thresholds: [100, 200,
 300]`, the default output is therefore `[100, 200)`, `[200, 300)`, and `[300,
@@ -50,7 +53,7 @@ false` to omit `[300, infinity)`.
 
 Every emitted feature has numeric properties:
 
-- `band`: threshold index; the lower unbounded band uses `-1`
+- `band`: zero-based output band index
 - `min`: inclusive lower threshold; omitted from the lower unbounded band
 - `max`: exclusive upper threshold; omitted from the final unbounded band
 

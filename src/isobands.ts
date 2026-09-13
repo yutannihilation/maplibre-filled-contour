@@ -28,6 +28,7 @@ export function generateIsobands(
     const thresholds = validateThresholds(options.thresholds);
     const includeLower = options.lower ?? false;
     const includeUpper = options.upper ?? true;
+    const bandOffset = includeLower ? 1 : 0;
     const extent = positiveInteger(options.extent ?? DEFAULT_EXTENT, 'extent');
     const buffer = nonNegativeInteger(options.buffer ?? DEFAULT_BUFFER, 'buffer');
     if (width < 2 || height < 2 || values.length !== width * height) {
@@ -62,7 +63,7 @@ export function generateIsobands(
         if (geometry.length) {
             geometry = scaleGeometry(geometry, padding, scaleX, scaleY);
             result.push({
-                properties: {band: -1, max: thresholds[0] as number},
+                properties: {band: 0, max: thresholds[0] as number},
                 geometry
             });
         }
@@ -82,8 +83,8 @@ export function generateIsobands(
         const max = thresholds[index + 1];
         result.push({
             properties: max === undefined
-                ? {band: index, min: thresholds[index] as number}
-                : {band: index, min: thresholds[index] as number, max},
+                ? {band: index + bandOffset, min: thresholds[index] as number}
+                : {band: index + bandOffset, min: thresholds[index] as number, max},
             geometry
         });
     }

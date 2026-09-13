@@ -45,9 +45,9 @@ describe('generateIsobands', () => {
         );
 
         expect(bands.map((band) => band.properties)).toEqual([
-            {band: -1, max: 200},
-            {band: 0, min: 200, max: 300},
-            {band: 1, min: 300, max: 400}
+            {band: 0, max: 200},
+            {band: 1, min: 200, max: 300},
+            {band: 2, min: 300, max: 400}
         ]);
         expect(bands.every((band) => band.geometry.length > 0)).toBe(true);
     });
@@ -60,7 +60,7 @@ describe('generateIsobands', () => {
         });
 
         expect(bands).toHaveLength(1);
-        expect(bands[0]?.properties).toEqual({band: -1, max: 100});
+        expect(bands[0]?.properties).toEqual({band: 0, max: 100});
     });
 });
 
@@ -153,7 +153,7 @@ describe('DemSource', () => {
             .find((candidate) => candidate.name === 'isobands');
         const features = table?.getFeatures() ?? [];
         expect(features.length).toBeGreaterThan(0);
-        expect(features.every((feature) => feature.properties.band === -1)).toBe(true);
+        expect(features.every((feature) => feature.properties.band === 0)).toBe(true);
         expect(features.every((feature) => feature.properties.min === undefined)).toBe(true);
         expect(features.every((feature) => feature.properties.max === 100)).toBe(true);
     });
