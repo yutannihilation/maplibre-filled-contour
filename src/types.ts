@@ -30,8 +30,12 @@ export type DecodeImageFunction = (
 export interface DemSourceOptions {
     /** Remote DEM URL containing `{z}`, `{x}`, and `{y}` placeholders. */
     url: string;
-    /** Strictly increasing band boundaries. The lower unbounded band is omitted. */
+    /** Strictly increasing band boundaries. */
     thresholds: number[];
+    /** Include the unbounded band below the first threshold. Defaults to false. */
+    lower?: boolean;
+    /** Include the unbounded band above the final threshold. Defaults to true. */
+    upper?: boolean;
     /** DEM pixel encoding. Defaults to `terrarium`. */
     encoding?: DemEncoding;
     /** Maximum zoom available from the DEM source. Defaults to 12. */
@@ -57,10 +61,10 @@ export interface DemSourceOptions {
 }
 
 export interface IsobandProperties {
-    /** Zero-based position of this band in `thresholds`. */
+    /** Threshold index for this band. The lower unbounded band uses -1. */
     band: number;
-    /** Inclusive lower boundary. */
-    min: number;
+    /** Inclusive lower boundary; absent on the unbounded lower band. */
+    min?: number;
     /** Exclusive upper boundary; absent on the unbounded upper band. */
     max?: number;
 }
@@ -78,6 +82,10 @@ export interface TileCoordinate {
 
 export interface IsobandGenerationOptions {
     thresholds: number[];
+    /** Include the unbounded band below the first threshold. Defaults to false. */
+    lower?: boolean;
+    /** Include the unbounded band above the final threshold. Defaults to true. */
+    upper?: boolean;
     extent?: number;
     buffer?: number;
 }

@@ -36,20 +36,22 @@ produces cumulative polygons `C(i)` containing values greater than or equal to
 `polygon-clipping`:
 
 ```text
-band 0 = C(0) - C(1) = [t0, t1)
+band -1 = clip - C(0)  = (-infinity, t0) (when `lower` is true)
+band 0  = C(0) - C(1) = [t0, t1)
 band 1 = C(1) - C(2) = [t1, t2)
 ...
-band n = C(n)        = [tn, infinity)
+band n = C(n)          = [tn, infinity) (when `upper` is true)
 ```
 
-The lower unbounded band `(-infinity, t0)` is intentionally not generated. For
-`thresholds: [100, 200, 300]`, the output is therefore `[100, 200)`,
-`[200, 300)`, and `[300, infinity)`.
+By default, `lower` is false and `upper` is true. For `thresholds: [100, 200,
+300]`, the default output is therefore `[100, 200)`, `[200, 300)`, and `[300,
+infinity)`. Set `lower: true` to include `(-infinity, 100)`, and set `upper:
+false` to omit `[300, infinity)`.
 
 Every emitted feature has numeric properties:
 
-- `band`: zero-based threshold index
-- `min`: inclusive lower threshold
+- `band`: threshold index; the lower unbounded band uses `-1`
+- `min`: inclusive lower threshold; omitted from the lower unbounded band
 - `max`: exclusive upper threshold; omitted from the final unbounded band
 
 A band that has no geometry in a tile emits no feature.
@@ -110,8 +112,8 @@ default) and whose extent is the configured `extent`.
 D3 and `polygon-clipping` return a `MultiPolygon` for a band. The implementation
 emits each polygon component as a separate MLT `Polygon` feature and retains its
 interior rings as holes. It does not emit one `MultiPolygon` feature, and it does
-not assign feature ids. All components copy the band's `band`, `min`, and
-optional `max` properties.
+not assign feature ids. All components copy the band's `band` and whichever of
+the optional `min` and `max` boundaries apply.
 
 Before encoding, the implementation removes a repeated closing coordinate and
 consecutive duplicate coordinates from every ring. Ring closure and polygon

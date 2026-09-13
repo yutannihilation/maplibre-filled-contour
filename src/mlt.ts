@@ -48,9 +48,9 @@ function toMltRing(ring: Ring): Position[] {
 
 function toProperties(properties: IsobandProperties): Record<string, number> {
     const result: Record<string, number> = {
-        band: properties.band,
-        min: properties.min
+        band: properties.band
     };
+    if (properties.min !== undefined) result.min = properties.min;
     if (properties.max !== undefined) result.max = properties.max;
     return result;
 }
