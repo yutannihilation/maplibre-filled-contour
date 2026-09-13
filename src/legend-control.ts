@@ -3,13 +3,23 @@ import type {IsobandBand, IsobandLegendOptions} from './types.js';
 
 /** MapLibre control that renders the same bands and colors used by the fill layer. */
 export class IsobandLegendControl implements IControl {
-    private readonly bands: readonly IsobandBand[];
+    private bands: readonly IsobandBand[];
     private readonly options: IsobandLegendOptions;
+    private pending: boolean;
     private container: HTMLElement | undefined;
+    private list: HTMLElement | undefined;
 
-    constructor(bands: readonly IsobandBand[], options: IsobandLegendOptions = {}) {
+    constructor(bands: readonly IsobandBand[], options: IsobandLegendOptions = {}, pending = false) {
         this.bands = bands.map((band) => ({...band}));
         this.options = options;
+        this.pending = pending;
+    }
+
+    /** Replaces the displayed ranges after data-derived thresholds resolve. */
+    setBands(bands: readonly IsobandBand[]): void {
+        this.bands = bands.map((band) => ({...band}));
+        this.pending = false;
+        this.renderItems();
     }
 
     readonly getDefaultPosition = (): ControlPosition => this.options.position ?? 'bottom-left';
@@ -53,15 +63,29 @@ export class IsobandLegendControl implements IControl {
             display: 'grid',
             gap: 'var(--maplibre-filled-contour-legend-row-gap, 4px)'
         });
-        for (const band of this.bands) list.append(this.createItem(band));
         container.append(list);
         this.container = container;
+        this.list = list;
+        this.renderItems();
         return container;
     }
 
     onRemove(_map: Map): void {
         this.container?.remove();
         this.container = undefined;
+        this.list = undefined;
+    }
+
+    private renderItems(): void {
+        if (!this.list) return;
+        if (this.pending) {
+            const status = document.createElement('div');
+            status.className = 'maplibre-filled-contour-legend__status';
+            status.textContent = this.options.loadingLabel ?? 'Determining thresholds…';
+            this.list.replaceChildren(status);
+            return;
+        }
+        this.list.replaceChildren(...this.bands.map((band) => this.createItem(band)));
     }
 
     private createItem(band: IsobandBand): HTMLElement {

@@ -3,7 +3,7 @@ import {AsyncLruCache} from './cache.js';
 import defaultDecodeImage from './decode-image.js';
 import {HeightTile} from './height-tile.js';
 import {IsobandLegendControl} from './legend-control.js';
-import {processTile, type ProcessTileInput} from './process-tile.js';
+import {processTileWithMetadata, type ProcessTileInput, type ProcessTileResult} from './process-tile.js';
 import {createIsobandBands, createIsobandFillColorExpression} from './style.js';
 import type {
     AddedIsobandLayer,
@@ -44,7 +44,6 @@ const defaultGetTile = async (url: string, controller: AbortController): Promise
 
 /** Generates filled contour vector tiles on demand from an XYZ raster DEM source. */
 export class DemSource {
-    readonly thresholds: readonly number[];
     readonly colors: readonly string[];
     readonly includeLower: boolean;
     readonly includeUpper: boolean;
@@ -67,6 +66,10 @@ export class DemSource {
     private readonly rawCache: AsyncLruCache<string, FetchResponse>;
     private readonly demCache: AsyncLruCache<string, DemTile>;
     private readonly outputCache: AsyncLruCache<string, Uint8Array>;
+    private readonly dynamicThresholdCount: number | undefined;
+    private resolvedThresholds: readonly number[] | undefined;
+    private dynamicResolution: Promise<ProcessTileResult> | undefined;
+    private readonly legends = new Set<IsobandLegendControl>();
     private worker: IsobandWorker | undefined;
     private workerUnavailable = false;
     private registry: ProtocolRegistry | undefined;
@@ -74,11 +77,17 @@ export class DemSource {
     constructor(options: DemSourceOptions) {
         if (!options || typeof options !== 'object') throw new TypeError('DemSource options are required.');
         this.url = validateUrl(options.url);
-        this.thresholds = Object.freeze(validateThresholds(options.thresholds));
+        if (Array.isArray(options.thresholds)) {
+            this.resolvedThresholds = Object.freeze(validateThresholds(options.thresholds));
+        } else {
+            this.dynamicThresholdCount = positiveInteger(options.thresholds, 'thresholds');
+        }
         this.includeLower = options.includeLower ?? false;
         this.includeUpper = options.includeUpper ?? true;
+        const colorBoundaries = this.resolvedThresholds
+            ?? Array.from({length: this.dynamicThresholdCount as number}, (_, index) => index);
         const bands = createIsobandBands(
-            this.thresholds,
+            colorBoundaries,
             this.includeLower,
             this.includeUpper,
             options.colors
@@ -112,6 +121,16 @@ export class DemSource {
         this.outputCache = new AsyncLruCache(cacheSize);
     }
 
+    /** Resolved boundaries. Empty until the first tile determines dynamic thresholds. */
+    get thresholds(): readonly number[] {
+        return this.resolvedThresholds ?? [];
+    }
+
+    /** Whether data-derived thresholds have been resolved (always true for a static array). */
+    get thresholdsResolved(): boolean {
+        return this.resolvedThresholds !== undefined;
+    }
+
     /** Registers the DEM-sharing and filled-contour protocols with MapLibre. */
     setupMaplibre(maplibre: ProtocolRegistry): this {
         if (this.registry && this.registry !== maplibre) {
@@ -138,12 +157,16 @@ export class DemSource {
 
     /** Returns the ordered ranges and colors shared by generated styles and legends. */
     getBands(): IsobandBand[] {
-        return createIsobandBands(
-            this.thresholds,
+        const boundaries = this.resolvedThresholds
+            ?? Array.from({length: this.dynamicThresholdCount as number}, (_, index) => index);
+        const bands = createIsobandBands(
+            boundaries,
             this.includeLower,
             this.includeUpper,
             this.colors
         );
+        if (this.resolvedThresholds) return bands;
+        return bands.map(({band, color}) => ({band, color}));
     }
 
     /** Generates a MapLibre fill-color expression that matches the output `band` property. */
@@ -173,7 +196,9 @@ export class DemSource {
 
     /** Creates a MapLibre control using the same band model as the generated fill style. */
     getLegendControl(options: IsobandLegendOptions = {}): IsobandLegendControl {
-        return new IsobandLegendControl(this.getBands(), options);
+        const legend = new IsobandLegendControl(this.getBands(), options, !this.thresholdsResolved);
+        this.legends.add(legend);
+        return legend;
     }
 
     /** Adds the generated source, fill layer, and (by default) legend to a loaded map. */
@@ -257,6 +282,7 @@ export class DemSource {
         this.outputCache.clear();
         this.worker?.terminate();
         this.worker = undefined;
+        this.legends.clear();
         this.registry?.removeProtocol?.(this.sharedDemProtocolId);
         this.registry?.removeProtocol?.(this.filledContourProtocolId);
         this.registry = undefined;
@@ -285,6 +311,47 @@ export class DemSource {
     }
 
     private async generateTile(z: number, x: number, y: number, controller: AbortController): Promise<Uint8Array> {
+        while (!this.resolvedThresholds) {
+            throwIfAborted(controller);
+            let resolution = this.dynamicResolution;
+            const owner = resolution === undefined;
+            if (!resolution) {
+                // Reserve the first request synchronously, before any DEM fetch starts.
+                resolution = Promise.resolve()
+                    .then(() => this.generateTileResult(z, x, y, controller))
+                    .then((result) => {
+                        throwIfAborted(controller);
+                        const thresholds = validateThresholds(result.thresholds);
+                        if (thresholds.length !== this.dynamicThresholdCount) {
+                            throw new Error(`Worker returned ${thresholds.length} dynamic thresholds; expected ${this.dynamicThresholdCount}.`);
+                        }
+                        this.resolvedThresholds = Object.freeze(thresholds);
+                        for (const legend of this.legends) legend.setBands(this.getBands());
+                        return result;
+                    })
+                    .finally(() => {
+                        if (this.dynamicResolution === resolution) this.dynamicResolution = undefined;
+                    });
+                this.dynamicResolution = resolution;
+            }
+            try {
+                const result = await resolution;
+                throwIfAborted(controller);
+                if (owner) return result.data;
+            } catch (error) {
+                throwIfAborted(controller);
+                if (owner) throw error;
+                // A failed or cancelled initializer lets the next waiting request try.
+            }
+        }
+
+        return (await this.generateTileResult(z, x, y, controller)).data;
+    }
+
+    private async generateTileResult(
+        z: number, x: number, y: number, controller: AbortController
+    ): Promise<ProcessTileResult> {
+        throwIfAborted(controller);
         const dimension = 2 ** z;
         const neighbors: Array<Promise<HeightTile | undefined>> = [];
         for (let offsetY = -1; offsetY <= 1; offsetY++) {
@@ -298,9 +365,10 @@ export class DemSource {
                 }
             }
         }
-        const combined = HeightTile.combineNeighbors(await Promise.all(neighbors));
+        const tiles = await Promise.all(neighbors);
         throwIfAborted(controller);
-        if (!combined) return new Uint8Array();
+        const combined = HeightTile.combineNeighbors(tiles);
+        if (!combined) return {data: new Uint8Array(), thresholds: [...this.thresholds]};
         const grid = combined.toGrid().materialize(GRID_PADDING);
         const input: ProcessTileInput = {
             values: grid.data,
@@ -309,18 +377,36 @@ export class DemSource {
             tileWidth: combined.width,
             tileHeight: combined.height,
             padding: GRID_PADDING,
-            thresholds: [...this.thresholds],
+            thresholds: this.resolvedThresholds ? [...this.resolvedThresholds] : this.dynamicThresholdCount as number,
             includeLower: this.includeLower,
             includeUpper: this.includeUpper,
             layer: this.layer,
             extent: this.extent,
             buffer: this.buffer
         };
+        if (!this.resolvedThresholds) {
+            // The contour grid only contains a narrow border from neighboring tiles.
+            // Scan each complete DEM tile before corner averaging to retain its extrema.
+            let minimum = Infinity;
+            let maximum = -Infinity;
+            for (const tile of tiles) {
+                if (!tile) continue;
+                for (let iy = 0; iy < tile.height; iy++) {
+                    for (let ix = 0; ix < tile.width; ix++) {
+                        const value = tile.get(ix, iy);
+                        if (!Number.isFinite(value)) continue;
+                        minimum = Math.min(minimum, value);
+                        maximum = Math.max(maximum, value);
+                    }
+                }
+            }
+            input.thresholdRange = [minimum, maximum];
+        }
         return this.processTile(input, controller);
     }
 
-    private async processTile(input: ProcessTileInput, controller: AbortController): Promise<Uint8Array> {
-        if (this.workerUnavailable || typeof Worker === 'undefined') return processTile(input);
+    private async processTile(input: ProcessTileInput, controller: AbortController): Promise<ProcessTileResult> {
+        if (this.workerUnavailable || typeof Worker === 'undefined') return processTileWithMetadata(input);
 
         let worker: IsobandWorker;
         try {
@@ -331,11 +417,15 @@ export class DemSource {
             this.worker?.terminate();
             this.worker = undefined;
             throwIfAborted(controller);
-            return processTile(input);
+            return processTileWithMetadata(input);
         }
 
         throwIfAborted(controller);
-        return worker.process(input, controller);
+        const result = await worker.process(input, controller);
+        if (result.thresholds.length === 0 && Array.isArray(input.thresholds)) {
+            return {...result, thresholds: input.thresholds};
+        }
+        return result;
     }
 
     private tileUrl(z: number, x: number, y: number): string {

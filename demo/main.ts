@@ -8,7 +8,7 @@ maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
 const demSource = new DemSource({
     url: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
-    thresholds: [0, 250, 500, 1000, 1500, 2000, 3000],
+    thresholds: 7,
     colors: [
         '#f1f8e9',
         '#dcedc8',

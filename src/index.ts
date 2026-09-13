@@ -2,6 +2,7 @@ export {DemSource} from './dem-source.js';
 export {decodeParsedImage} from './decode-image.js';
 export {generateIsobands} from './isobands.js';
 export {IsobandLegendControl} from './legend-control.js';
+export {deriveThresholds} from './process-tile.js';
 export {
     createIsobandBands,
     createIsobandFillColorExpression,

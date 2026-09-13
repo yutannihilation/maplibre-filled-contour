@@ -36,8 +36,8 @@ export type DecodeImageFunction = (
 export interface DemSourceOptions {
     /** Remote DEM URL containing `{z}`, `{x}`, and `{y}` placeholders. */
     url: string;
-    /** Strictly increasing band boundaries. */
-    thresholds: number[];
+    /** Strictly increasing band boundaries, or a boundary count derived once from the first requested DEM neighborhood. */
+    thresholds: number[] | number;
     /** One color per output band, or a color interpolator sampled once per band. Uses a blue ramp by default. */
     colors?: IsobandColors;
     /** Include the unbounded band below the first threshold. Defaults to false. */
@@ -132,6 +132,8 @@ export interface IsobandLegendOptions {
     ariaLabel?: string;
     /** Default corner used when adding the control. Defaults to `bottom-left`. */
     position?: ControlPosition;
+    /** Text shown until data-derived thresholds are available. Defaults to `Determining thresholds…`. */
+    loadingLabel?: string;
 }
 
 export interface AddIsobandLayerOptions extends Omit<IsobandLayerOptions, 'source'> {

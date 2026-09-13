@@ -60,6 +60,42 @@ map.on('load', () => {
 > **Note:** `colors` is optional. If omitted, the plugin generates a
 > single-hue sequential blue ramp sized to the number of emitted bands.
 
+### Dynamic thresholds
+
+Pass a positive integer instead of an array to derive equal-interval thresholds
+from actual DEM samples:
+
+```js
+const demSource = new filledContour.DemSource({
+  url: 'https://url/of/dem/source/{z}/{x}/{y}.png',
+  thresholds: 7,
+  colors: interpolateTerrain
+});
+```
+
+The integer is the number of boundaries. With the default lower and upper band
+settings, it is also the number of emitted bands. The first requested tile's
+complete 3×3 DEM neighborhood determines the minimum and maximum from valid
+elevation samples, before the pixels are averaged into contour grid corners.
+Neighbors outside the vertical tile bounds are skipped. The worker returns the
+resulting boundaries with the generated tile; the source then freezes and reuses
+them for every subsequent tile so a `band` index always has one meaning across
+the map.
+
+The first request reserves initialization before fetching starts. Later requests
+wait for its thresholds, even when their DEMs are already cached. If the initial
+request fails or is cancelled, the next waiting request can initialize thresholds.
+
+Before that first tile finishes, `demSource.thresholds` is empty,
+`demSource.thresholdsResolved` is `false`, and an automatically added legend
+shows `Determining thresholds…`. The legend replaces that message with its
+resolved ranges automatically. Customize the temporary message with
+`legend: {loadingLabel: 'Loading ranges…'}`.
+
+Because the result is intentionally frozen, it reflects the first requested
+area rather than a scan of the entire DEM dataset. Use a static threshold array
+when thresholds must represent a known global domain.
+
 `addTo()` adds the vector source, generated fill layer, and legend together. It must
 be called after the map's style has loaded. The returned handle removes everything
 it added:
@@ -162,6 +198,7 @@ classes:
 - `.maplibre-filled-contour-legend`
 - `.maplibre-filled-contour-legend__title`
 - `.maplibre-filled-contour-legend__items`
+- `.maplibre-filled-contour-legend__status`
 - `.maplibre-filled-contour-legend__item`
 - `.maplibre-filled-contour-legend__swatch`
 - `.maplibre-filled-contour-legend__label`

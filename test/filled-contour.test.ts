@@ -5,6 +5,7 @@ import {
     createIsobandStyle,
     decodeParsedImage,
     DemSource,
+    deriveThresholds,
     generateIsobands,
     type DecodeImageFunction,
     type GetTileFunction
@@ -132,6 +133,9 @@ describe('generated styles and legends', () => {
             readonly style: Record<string, string> = {};
             removed = false;
             append(...children: FakeElement[]): void { this.children.push(...children); }
+            replaceChildren(...children: FakeElement[]): void {
+                this.children.splice(0, this.children.length, ...children);
+            }
             setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
             remove(): void { this.removed = true; }
         }
@@ -174,6 +178,17 @@ describe('DEM decoding', () => {
             1, 1, 'mapbox', new Uint8ClampedArray([1, 134, 160, 255])
         );
         expect(mapbox.data[0]).toBeCloseTo(0, 5);
+    });
+});
+
+describe('dynamic thresholds', () => {
+    it('derives exact equal-interval boundaries while ignoring invalid samples', () => {
+        expect(deriveThresholds(Float32Array.from([Number.NaN, -100, 0, 100, 300]), 4))
+            .toEqual([-100, 0, 100, 200]);
+        expect(deriveThresholds(new Float32Array(4).fill(250), 3))
+            .toEqual([250, 251, 252]);
+        expect(() => deriveThresholds(Float32Array.from([Number.NaN]), 3))
+            .toThrow(/finite DEM sample/);
     });
 });
 
@@ -230,6 +245,63 @@ describe('DemSource', () => {
 
         source.destroy();
         expect(maplibre.removeProtocol).toHaveBeenCalledTimes(2);
+    });
+
+    it('derives thresholds once from the first requested DEM neighborhood', async () => {
+        class FakeElement {
+            className = '';
+            textContent = '';
+            readonly children: FakeElement[] = [];
+            readonly attributes = new Map<string, string>();
+            readonly style: Record<string, string> = {};
+            append(...children: FakeElement[]): void { this.children.push(...children); }
+            replaceChildren(...children: FakeElement[]): void {
+                this.children.splice(0, this.children.length, ...children);
+            }
+            setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
+            remove(): void {}
+        }
+        vi.stubGlobal('document', {createElement: () => new FakeElement()});
+
+        const source = new DemSource({
+            id: 'dynamic-terrain',
+            url: 'https://example.test/{z}/{x}/{y}.png',
+            thresholds: 4,
+            colors: ['red', 'orange', 'yellow', 'green'],
+            getTile,
+            decodeImage: async () => ({
+                width: 4,
+                height: 4,
+                data: Float32Array.from({length: 16}, (_, index) => (index % 4) * 100)
+            })
+        });
+
+        expect(source.thresholdsResolved).toBe(false);
+        expect(source.thresholds).toEqual([]);
+        expect(source.getBands()).toEqual([
+            {band: 0, color: 'red'},
+            {band: 1, color: 'orange'},
+            {band: 2, color: 'yellow'},
+            {band: 3, color: 'green'}
+        ]);
+        const legend = source.getLegendControl({unit: 'm'});
+        const legendElement = legend.onAdd({} as never) as unknown as FakeElement;
+        expect(legendElement.children[1]?.children[0]?.textContent).toBe('Determining thresholds…');
+
+        const bytes = await source.getFilledContourTile(0, 0, 0);
+        expect(bytes.byteLength).toBeGreaterThan(0);
+        expect(source.thresholdsResolved).toBe(true);
+        expect(source.thresholds).toEqual([0, 75, 150, 225]);
+        expect(source.getBands()).toEqual([
+            {band: 0, min: 0, max: 75, color: 'red'},
+            {band: 1, min: 75, max: 150, color: 'orange'},
+            {band: 2, min: 150, max: 225, color: 'yellow'},
+            {band: 3, min: 225, color: 'green'}
+        ]);
+        expect(legendElement.children[1]?.children.map((item) => item.children[1]?.textContent)).toEqual([
+            '0–75 m', '75–150 m', '150–225 m', '≥ 225 m'
+        ]);
+        source.destroy();
     });
 
     it('adds and removes a synchronized source, layer, and legend', () => {
@@ -356,7 +428,9 @@ describe('DemSource', () => {
             postMessage(message: {id: number}): void {
                 if (!ready) postedBeforeReady = true;
                 const data = Uint8Array.from([1, 2, 3]).buffer;
-                queueMicrotask(() => this.onmessage?.({data: {id: message.id, data}} as MessageEvent));
+                queueMicrotask(() => this.onmessage?.({
+                    data: {id: message.id, data, thresholds: [125]}
+                } as MessageEvent));
             }
 
             terminate(): void {}
@@ -366,13 +440,14 @@ describe('DemSource', () => {
         const source = new DemSource({
             id: 'worker-ready',
             url: 'https://example.test/{z}/{x}/{y}.png',
-            thresholds: [100],
+            thresholds: 1,
             colors: ['red'],
             getTile,
             decodeImage
         });
 
         expect(await source.getFilledContourTile(0, 0, 0)).toEqual(Uint8Array.from([1, 2, 3]));
+        expect(source.thresholds).toEqual([125]);
         expect(constructions).toBe(1);
         expect(postedBeforeReady).toBe(false);
         source.destroy();

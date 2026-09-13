@@ -1,8 +1,9 @@
-import type {ProcessTileInput} from './process-tile.js';
+import type {ProcessTileInput, ProcessTileResult} from './process-tile.js';
 
 interface WorkerResponse {
     id: number;
     data?: ArrayBuffer;
+    thresholds?: number[];
     error?: string;
 }
 
@@ -11,7 +12,7 @@ interface WorkerReady {
 }
 
 interface Pending {
-    resolve: (data: Uint8Array) => void;
+    resolve: (result: ProcessTileResult) => void;
     reject: (error: Error) => void;
 }
 
@@ -39,7 +40,10 @@ export class IsobandWorker {
             if (!pending) return;
             this.pending.delete(response.id);
             if (response.error) pending.reject(new Error(response.error));
-            else pending.resolve(response.data ? new Uint8Array(response.data) : new Uint8Array());
+            else pending.resolve({
+                data: response.data ? new Uint8Array(response.data) : new Uint8Array(),
+                thresholds: response.thresholds ?? []
+            });
         };
         this.worker.onerror = (event) => {
             const error = new Error(event.message || 'Isoband worker failed.');
@@ -53,7 +57,7 @@ export class IsobandWorker {
         return this.startup;
     }
 
-    process(input: ProcessTileInput, abortController: AbortController): Promise<Uint8Array> {
+    process(input: ProcessTileInput, abortController: AbortController): Promise<ProcessTileResult> {
         const id = ++this.nextId;
         return new Promise((resolve, reject) => {
             const onAbort = () => {
